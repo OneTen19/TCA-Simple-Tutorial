@@ -14,16 +14,22 @@ struct CounterFeature {
     struct State: Equatable {
         var count = 0
         var isLoading = false
+        var isTimerEnabled = false
+        var memo = ""
     }
     
-    enum Action {
-        case incrementButtonTapped  // 증가 버튼 클릭
-        case decrementButtonTapped  // 감소 버튼 클릭
-        case delayedIncrementButtonTapped // 지연 증가 버튼 클릭
-        case incrementResponse // 1초가 지난 후 실제로 카운트를 올리라는 내부 액션
+    enum Action: BindableAction {
+        case incrementButtonTapped
+        case decrementButtonTapped
+        case delayedIncrementButtonTapped
+        case incrementResponse
+        case binding(BindingAction<State>)
     }
     
     var body: some Reducer<State, Action> {
+        
+        BindingReducer()
+        
         Reduce { state, action in
             switch action {
             case .incrementButtonTapped:
@@ -50,20 +56,28 @@ struct CounterFeature {
                 state.count += 1
                 return .none
                 
+                
+            // "들어온 binding 액션이 정확히 'isTimerEnabled' 변수를 건드린 경우라면 이쪽으로 와라"
+            case .binding(\.isTimerEnabled):
+                print("타이머 스위치가 변경되었습니다: \(state.isTimerEnabled)")
+                return .none
+                
+            // "위에서 걸러지지 않은 나머지 모든 binding 액션은 여기서 처리해라"
+            case .binding:
+                return .none
             }
         }
     }
+    
 }
 
 struct CounterView: View {
-    let store: StoreOf<CounterFeature>
+    @Bindable var store: StoreOf<CounterFeature>
     
     var body: some View {
         VStack {
-            
             if store.isLoading {
-                ProgressView()
-                    .padding()
+                ProgressView().padding()
             } else {
                 Text("\(store.count)")
                     .font(.largeTitle)
@@ -71,31 +85,42 @@ struct CounterView: View {
             }
             
             HStack {
-                Button("-") {
-                    store.send(.decrementButtonTapped)
-                }
-                .font(.largeTitle)
-                .padding()
-                .background(Color.black.opacity(0.1))
-                .cornerRadius(10)
+                Button("-") { store.send(.decrementButtonTapped) }
+                    .font(.largeTitle)
+                    .padding()
+                    .background(Color.black.opacity(0.1))
+                    .cornerRadius(10)
                 
-                Button("+") {
-                    store.send(.incrementButtonTapped)
-                }
-                .font(.largeTitle)
-                .padding()
-                .background(Color.black.opacity(0.1))
-                .cornerRadius(10)
+                Button("+") { store.send(.incrementButtonTapped) }
+                    .font(.largeTitle)
+                    .padding()
+                    .background(Color.black.opacity(0.1))
+                    .cornerRadius(10)
                 
-                Button("1초 뒤 증가") {
-                    store.send(.delayedIncrementButtonTapped)
-                }
-                .font(.largeTitle)
-                .padding()
-                .background(Color.black.opacity(0.1))
-                .cornerRadius(10)
+                Button("1초 뒤") { store.send(.delayedIncrementButtonTapped) }
+                    .font(.headline)
+                    .padding()
+                    .background(Color.blue.opacity(0.2))
+                    .cornerRadius(10)
             }
+            .padding()
+            
+            Divider().padding()
+            
+            Toggle("타이머 활성화", isOn: $store.isTimerEnabled)
+                .padding()
+                .background(store.isTimerEnabled ? Color.green.opacity(0.2) : Color.gray.opacity(0.1))
+                .cornerRadius(8)
+            
+            TextField("메모를 입력하세요", text: $store.memo)
+                .textFieldStyle(.roundedBorder)
+                .padding(.top)
+            
+            Text("입력 중: \(store.memo)")
+                .font(.caption)
+                .foregroundStyle(.gray)
         }
+        .padding()
     }
 }
 

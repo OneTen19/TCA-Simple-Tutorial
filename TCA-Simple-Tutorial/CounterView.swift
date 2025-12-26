@@ -16,6 +16,7 @@ struct CounterFeature {
         var isLoading = false
         var isTimerEnabled = false
         var memo = ""
+        var fact: String?
     }
     
     enum Action: BindableAction {
@@ -24,7 +25,16 @@ struct CounterFeature {
         case delayedIncrementButtonTapped
         case incrementResponse
         case binding(BindingAction<State>)
+        case factButtonTapped
+        case factResponse(String)
     }
+    
+    
+    // \.continuousClock은 TCA가 기본으로 제공하는 시간 관련 도구
+    @Dependency(\.continuousClock) var clock
+    
+    // 방금 만든 API Client 주입
+    @Dependency(\.numberFact) var numberFact
     
     var body: some Reducer<State, Action> {
         
@@ -41,13 +51,13 @@ struct CounterFeature {
                 return .none
                 
             case .delayedIncrementButtonTapped:
-                state.isLoading = true  // 로딩 시작
+                state.isLoading = true
                 
+                // Task.sleep 대신 clock.sleep을 사용
                 return .run { send in
-                    // 복잡한 비동기 로직(API 호출, 타이머 등)을 수행.
-                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1초 대기
+                    // try await Task.sleep(nanoseconds: 1_000_000_000) // ❌ 이제 이거 안 씀
+                    try await clock.sleep(for: .seconds(1))             // ✅ TCA continuousClock 사용
                     
-                    // 작업이 끝나면 다시 Action을 날려서 State 변경.
                     await send(.incrementResponse)
                 }
                 
@@ -57,13 +67,38 @@ struct CounterFeature {
                 return .none
                 
                 
-            // "들어온 binding 액션이 정확히 'isTimerEnabled' 변수를 건드린 경우라면 이쪽으로 와라"
+                // "들어온 binding 액션이 정확히 'isTimerEnabled' 변수를 건드린 경우라면 이쪽으로 와라"
             case .binding(\.isTimerEnabled):
                 print("타이머 스위치가 변경되었습니다: \(state.isTimerEnabled)")
                 return .none
                 
-            // "위에서 걸러지지 않은 나머지 모든 binding 액션은 여기서 처리해라"
+                // "위에서 걸러지지 않은 나머지 모든 binding 액션은 여기서 처리해라"
             case .binding:
+                return .none
+                
+                // 사실 가져오기 버튼 클릭
+            case .factButtonTapped:
+                print("🟢 [Reducer] 버튼 클릭됨. 통신 시도.")
+                state.fact = nil
+                state.isLoading = true
+                
+                return .run { [count = state.count] send in
+                    print("🏃 [Reducer] .run 블록 진입")
+                    do {
+                        let fact = try await numberFact.fetch(count)
+                        print("📩 [Reducer] 결과 받음, Action 발송: \(fact)")
+                        await send(.factResponse(fact))
+                    } catch {
+                        print("🔥 [Reducer] 에러 발생 (catch): \(error)")
+                        await send(.factResponse("에러: \(error.localizedDescription)"))
+                    }
+                }
+                
+                // 결과 받아서 화면에 표시
+            case .factResponse(let fact):
+                print("🏁 [Reducer] .factResponse 도착: \(fact)")
+                state.isLoading = false
+                state.fact = fact
                 return .none
             }
         }
@@ -104,6 +139,23 @@ struct CounterView: View {
                     .cornerRadius(10)
             }
             .padding()
+            
+            Button("이 숫자의 비밀은? 🕵️‍♀️") {
+                store.send(.factButtonTapped)
+            }
+            .padding()
+            .background(Color.orange)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+            
+            if let fact = store.fact {
+                Text(fact)
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                    .background(Color.yellow.opacity(0.2))
+                    .cornerRadius(8)
+            }
             
             Divider().padding()
             
